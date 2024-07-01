@@ -1,0 +1,257 @@
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+//make all of these operators return the number of positions they move the string forward pls
+int direct_match(char * text, char * regex) {
+	if (strcmp(text,regex) == 0) {
+		return 1;
+	} else {
+		return -1;
+	}
+}
+
+int digit_match(char * text, char * regex) {
+	char temp [2];
+	temp[1] = '\0';
+	for (int i = 0; i< strlen(text); i++) {
+		temp[0] = text[i];
+		if (!strstr("0123456789",temp)) {return -1;}
+	}
+	return 1;
+}
+
+int alpha_match(char * text, char * regex) {
+	char temp [2];
+	temp[1] = '\0';
+	for (int i = 0; i< strlen(text); i++) {
+		temp[0] = tolower(text[i]);
+		if (!strstr("0123456789abcdefghijklmnopqrstuvwxyz_",temp)) {return -1;}
+	}
+	return 1;
+}
+
+int positive_match(char * text, char* group) {	
+	char temp[2];
+	temp[1] = '\0';
+	temp[0] = text[0];
+	if (!strstr(group, temp)) { return -1;}
+	return 1; //this may have to be i+1
+}
+
+int negative_match(char * text, char* group) {	
+	char temp[2];
+	temp[1] = '\0';
+	temp[0] = text[0];
+	if (strstr(group, temp)) { return -1;}
+	return 1; //this may have to be i+1
+}
+
+int match_wildcard(char * text, char * regex) {
+	return 1;
+}
+
+enum regexType {DIRECT,DIGIT,ALPHA,POSITIVE,NEGATIVE,WILDCARD,STARTOF, ENDOF};
+enum regexMod {NONE, ONEPLUS, ZEROPLUS};
+
+//this thing returns the appropriate increment 
+char * read_regex(char * foreign_regex, int *type, int *mod, char * matchableText) {
+	char * regex = foreign_regex;
+	int increment = 0;
+
+	//printf("Searching for correct regex type\n");
+	if (strncmp("/d", regex, 2) == 0){
+		*type = DIGIT;
+		matchableText = malloc(sizeof(char)*2);
+		matchableText[0] = regex[0];
+		matchableText[1] = '\0';
+		increment += 2;
+	} else if (strncmp("/w", regex, 2) == 0) {
+		*type = ALPHA;
+		matchableText = malloc(sizeof(char)*2);
+		matchableText[0] = regex[0];
+		matchableText[1] = '\0';
+		increment += 2;
+	} else if (strncmp("*", regex,1) == 0) {
+		*type = WILDCARD;
+		matchableText = malloc(sizeof(char)*2);
+		matchableText[0] = regex[0];
+		matchableText[1] = '\0';
+		increment += 1;
+	//the following two are almost certainly wrong!
+	} else if (strncmp("[^", regex,2) == 0) {
+		//printf("Negative Match\n");
+		int i = 2; 	
+		for (i; regex[i] != ']' ;i++) {if (regex[i] == '\0') {printf("Bad\n");exit(1);}};
+		matchableText = malloc(sizeof(char)*(i));
+		strncpy(matchableText, regex+2, i-2);
+		matchableText[i] = '\0';
+		*type = NEGATIVE;
+		increment += i+1;
+	} else if (strncmp("[", regex, 1) == 0) {
+		//printf("Positive Match\n");
+		int i = 1; 	
+		for (i; regex[i] != ']' ;i++) {if (regex[i] == '\0') {printf("Bad\n");exit(1);}};
+		matchableText = malloc(sizeof(char)*(i));
+		strncpy(matchableText, regex+1, i-1);
+		matchableText[i] = '\0';
+		*type = POSITIVE;
+		increment += i + 1;
+	} else if (strncmp("^",regex,1) == 0) {
+			*type = STARTOF;
+			increment += 1;
+	} else if (strncmp("?", regex, 1) == 0) {
+			*type = ENDOF;
+			increment += 1;
+	} else if (strncmp("(", regex, 1) == 0) {
+			//eventually tunrn this into or. probably cut out the whole () and send it back. Then have a function call this mess recursively to verify the sides of the or
+	}else {
+		*type = DIRECT;
+		matchableText = malloc(sizeof(char)*2);
+		matchableText[0] = regex[0];
+		matchableText[1] = '\0';
+		increment += 1;	
+	}
+
+	//printf("Matched:%d.\n",*type);
+	//printf("Matchable text:%s.\n",matchableText);
+	//printf("Moving to:%s.\n", regex+increment);
+	//printf("Completed first section.\n");
+
+		
+	*mod = NONE;			
+
+	if (strlen(regex) > increment) {
+		regex = regex + increment;
+		increment = 0;
+
+		//step two, figure out if a modifyer is being used 
+		if (strncmp(regex,"+",1) == 0) {
+			*mod = ONEPLUS;
+			increment += 1;
+		} else if (strncmp(regex,"?",1) == 0) {
+			*mod = ZEROPLUS;
+			increment += 1;
+		}
+		regex = regex + increment;
+	}	
+
+	//printf("Matched:%d.\n",*mod);
+	//printf("Moving to:%s.\n", regex);
+	//printf("Completed second section.\n");
+
+	return regex;
+}
+
+int run_regex(int (*fun)(char *, char *),char * target_string, char * regex_match, int mod) {
+	
+	int increment;
+	char * match_string;
+
+	switch (mod) {
+		case (NONE):
+			increment = fun(target_string, match_string);
+			if (increment == -1) {return -1;} else {match_string += increment; return increment;}
+			break;
+		case (ONEPLUS):
+			increment = fun(target_string, match_string);
+			if (increment == -1) {return -1;} else {
+				match_string += increment;
+				int temp = 0;
+				while ((temp = fun(target_string, match_string)) != -1) {
+					increment += temp;
+					match_string += temp;
+				}
+				return increment;
+			}
+			break;
+		case (ZEROPLUS):
+			increment = fun(target_string, match_string);
+			if (increment == -1) {return 0;} else {
+				match_string += increment;
+				int temp = 0;
+				while ((temp = fun(target_string, match_string)) != -1) {
+					increment += temp;
+					match_string += temp;
+				}
+				return increment;
+			}
+			break;
+		default:
+			printf("Mod error.\n");
+			exit(0);
+	}
+}
+
+
+int main(int argc, char * argv[]) {
+
+	//stores the actual string
+	char * string_to_match = "abba";
+	char * string_to_match_mod = string_to_match;
+
+	//regex string 	
+	char * regex_string = "[abc]";	
+	char * regex_string_mod =  regex_string;
+
+	//things to get infromation back from read_regex
+	int type, mod; 
+	char * matchable_regex; 
+
+	//I belive that regex updates the regex_string 
+	regex_string_mod = read_regex(regex_string_mod, &type, &mod, matchable_regex);
+	
+//	enum regexType {DIRECT,DIGIT,ALPHA,POSITIVE,NEGATIVE,WILDCARD,STARTOF, ENDOF};
+//	enum regexMod {NONE, ONEPLUS, ZEROPLUS};
+
+	int num_matched;
+	switch (type) {
+		case(DIRECT):
+			num_matched = run_regex(&direct_match, string_to_match_mod,matchable_regex , mod);
+			break;
+		case(ALPHA):
+			num_matched = run_regex(&alpha_match, string_to_match_mod,matchable_regex , mod);
+			break;
+		case(DIGIT):
+			num_matched = run_regex(&digit_match, string_to_match_mod,matchable_regex , mod);
+			break;
+		case(WILDCARD):
+			num_matched = run_regex(&match_wildcard, string_to_match_mod,matchable_regex , mod);
+			break;
+		case(POSITIVE):
+			num_matched = run_regex(&positive_match, string_to_match_mod,matchable_regex , mod);
+			break;
+		case(NEGATIVE):
+			num_matched = run_regex(&negative_match, string_to_match_mod,matchable_regex , mod);
+			break;
+		case(STARTOF):
+			//this should be some quick logic that verifies if you are at the starting character
+			break;
+		case(ENDOF):
+			//see above 
+			break;
+		default:
+			printf("Bad return value\n");
+			exit(0);
+	}
+
+	if (num_matched == -1) {
+		printf("Regex not matched\n");
+		exit(0);
+	} else {
+		string_to_match_mod += num_matched;
+			if (strlen(string_to_match_mod) == 0) {
+				printf("Done regex.\n");
+			} else {
+				printf("Regex Matched\n");
+				printf("Next regex:%s.\n", string_to_match_mod);
+			}
+	}
+
+
+}
+
+
+
+
